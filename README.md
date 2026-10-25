@@ -1,241 +1,295 @@
-# Enterprise Customer Management System (CRM)
+# Customer Management System
 
-A full-stack Customer Management System built using **React**, **Node.js / Express**, and **MongoDB (Mongoose)**, following clean architecture patterns and production-level standards.
+A full-stack customer management system built with React, Node.js, Express, and MongoDB. The application provides public customer registration, an isolated customer self-service portal, and a protected Super Admin management dashboard.
 
----
-
-## 🌟 Key Features
-
-### 1. Public Landing Page & Customer Registration
-- **Modern Responsive Design**: Built with Tailwind CSS, sleek typography, micro-interactions, and accessibility considerations.
-- **Client-Side & Server-Side Validation**:
-  - Validates all required fields: `name`, `email`, `phone`, `address`, `password`, `confirmPassword`.
-  - Email format RFC compliance and phone format regex matching.
-  - Real-time password confirmation check.
-  - Duplicate email prevention (with HTTP 409 conflict detection).
-  - Clear success and error notifications.
-- **Auto-Login & Redirect**: Redirects immediately upon successful registration.
-
-### 2. Database & Data Security (MongoDB + Mongoose)
-- **User Schema**:
-  - `name`: String, required, trim, 2-100 chars
-  - `email`: String, required, unique index, lowercase
-  - `phone`: String, required, format validated
-  - `address`: String, required, 5-300 chars
-  - `password`: Hashed using **Bcrypt (10 salt rounds)**, excluded from default queries (`select: false`)
-  - `role`: Enum `['customer', 'admin']`, defaults to `customer`
-  - `status`: Enum `['active', 'inactive']`, defaults to `active`
-  - `createdAt` & `updatedAt`: Automatic timestamps
-- **Password Protection**: Pre-save Mongoose hook only hashes passwords when modified. Model never leaks password in `toJSON()` responses.
-
-### 3. Customer Portal
-- **Profile Overview**: View authenticated customer information (name, email, phone, address, joined date, account status).
-- **Edit Allowed Information**: Safe self-service updating for `name`, `phone`, and `address` (email is locked to prevent identity takeover).
-- **Change Password**: Secure workflow requiring current password verification before updating.
-- **Strict Data Isolation**: Customers can **only** view and modify their own data. Backend enforces isolation via cryptographic JWT payloads (`req.user.id`).
-- **Logout**: Complete session termination and token revocation.
-
-### 4. Super Admin Console
-- **Key Performance Metrics**: Real-time counts for Total Customers, Active Accounts, Inactive Accounts, and New Registrations (last 30 days).
-- **Customer List Table**: Responsive directory showing name, email, phone, address, status, and joined date.
-- **Instant Search**: Search across name, email, and phone with immediate result filtering.
-- **Status Filtering**: Filter by `All`, `Active`, or `Inactive`.
-- **View Customer Details**: Modal with complete account timeline and metadata.
-- **Edit Customer Details**: Modal allowing Super Admins to update customer details and status.
-- **Activate / Deactivate Toggle**: Instantly activate or deactivate accounts with confirmation modals. Deactivated customers are immediately barred from logging in or calling API endpoints.
-- **Pagination**: Fully responsive pagination controls with custom page size selector (5, 10, 20, 50).
-- **Auto-Seeder**: Automatic generation of default Super Admin credentials on boot.
-
-### 5. Authentication & Security
-- **JWT (JSON Web Tokens)**: Secure token generation with configurable expiration.
-- **Role-Based Access Control (RBAC)**: Route middleware guards:
-  - `verifyToken`: Validates bearer token and verifies user status.
-  - `isCustomer`: Prevents admins or unauthorized users from customer endpoints.
-  - `isAdmin`: Protects all administrative and metrics routes.
-- **Active Account Check**: Deactivated accounts receive `403 Forbidden` error.
-- **Security Middleware**: `helmet`, `cors`, `morgan`, and rate limiting on auth endpoints.
+## Table of Contents
+- [Tech Stack](#tech-stack)
+- [Key Features](#key-features)
+- [Project Architecture](#project-architecture)
+- [Local Development Setup](#local-development-setup)
+- [Environment Configuration](#environment-configuration)
+- [Default Demo Credentials](#default-demo-credentials)
+- [REST API Reference](#rest-api-reference)
+- [Database Schema](#database-schema)
+- [Security & Validation Standards](#security--validation-standards)
 
 ---
 
-## 🗂️ Project Architecture
+## Tech Stack
+
+- **Frontend**: React 18, Vite, Tailwind CSS, Lucide React, React Router DOM, Axios
+- **Backend**: Node.js, Express.js
+- **Database**: MongoDB, Mongoose ORM
+- **Authentication**: JSON Web Tokens (JWT), bcryptjs (password hashing with 10 salt rounds)
+- **Validation**: express-validator (backend), custom regex and real-time state validation (frontend)
+- **Security**: Helmet, CORS, Express Rate Limit
+
+---
+
+## Key Features
+
+### 1. Landing Page & Registration
+- Responsive landing page with clear platform breakdown.
+- Customer registration form with live real-time validation:
+  - Full Name: Alphabetic characters and spaces only (min 2, max 60 chars).
+  - Email: RFC-compliant email validation with duplicate check.
+  - Phone: Strict 10-digit mobile number validation with real-time digit counter (`X/10 digits`).
+  - Physical Address: Character length validation (min 8 chars).
+  - Password & Confirm Password: Live password strength meter and matching indicator.
+- Instant error and success alerts with auto-redirect to customer portal on registration.
+
+### 2. Customer Portal
+- Dedicated login page (`/login`) with role validation.
+- Profile view displaying account status, member since date, contact information, and address.
+- Edit profile: Allows updating allowed contact fields (Name, Phone, Address). Email is locked to prevent identity takeover.
+- Change password: Requires existing password verification before accepting new password.
+- Strict data isolation: Customers can only query and mutate their own profile via `req.user.id` resolved from verified JWT payloads.
+
+### 3. Super Admin Panel
+- Dedicated administrator login (`/admin/login`) with role enforcement.
+- Key metrics dashboard: Total customers, active accounts, inactive accounts, and recent registrations (last 30 days).
+- Customer directory table with:
+  - Real-time search across Name, Email, and Phone number.
+  - Status filter (`All`, `Active`, `Inactive`).
+  - Full pagination controls with items-per-page selector (5, 10, 20, 50).
+  - View modal: Inspect complete customer record, registration date, and address.
+  - Edit modal: Inline editing of customer information with 10-digit phone enforcement.
+  - Account status toggle: One-click activate/deactivate action with confirmation prompt.
+- Inactive customer accounts are immediately barred from logging in or making API requests (HTTP 403 Forbidden).
+
+---
+
+## Project Architecture
 
 ```
 Customersupport/
-├── server/                         # Express & MongoDB REST API
-│   ├── .env                        # Server environment variables
-│   ├── .env.example                # Template environment variables
-│   ├── package.json
-│   └── src/
-│       ├── config/
-│       │   └── db.js               # MongoDB connection setup
-│       ├── controllers/
-│       │   ├── authController.js   # Register, Login, Me
-│       │   ├── customerController.js # Profile, Edit Profile, Change Password
-│       │   └── adminController.js  # Metrics, Customers CRUD, Status Toggle
-│       ├── middleware/
-│       │   ├── auth.js             # verifyToken, isAdmin, isCustomer guards
-│       │   ├── errorHandler.js     # Centralized error handler
-│       │   └── validator.js        # express-validator schemas
-│       ├── models/
-│       │   └── User.js             # Mongoose schema + bcrypt hooks
-│       ├── routes/
-│       │   ├── authRoutes.js       # /api/auth
-│       │   ├── customerRoutes.js   # /api/customer
-│       │   └── adminRoutes.js      # /api/admin
-│       ├── utils/
-│       │   └── seedAdmin.js        # Auto-seed Super Admin & demo customers
-│       └── server.js               # Express application entrypoint
+├── package.json              # Root orchestration script (concurrently)
+├── .gitignore                # Excludes node_modules, build outputs, and secrets
+├── README.md
 │
-├── client/                         # React 18 + Vite + Tailwind CSS
-│   ├── index.html
+├── server/                   # Backend REST API
+│   ├── .env                  # Local environment configuration
+│   ├── .env.example          # Sample configuration template
 │   ├── package.json
-│   ├── postcss.config.js
-│   ├── tailwind.config.js
-│   ├── vite.config.js
 │   └── src/
-│       ├── api/
-│       │   └── axiosClient.js      # Axios instance with JWT interceptor
-│       ├── components/
-│       │   ├── Alert.jsx           # Reusable feedback alerts
-│       │   ├── Footer.jsx          # App footer
-│       │   ├── Modal.jsx           # Accessible dialog modal
-│       │   ├── Navbar.jsx          # Header with user menu
-│       │   ├── Pagination.jsx      # Pagination controls
-│       │   ├── ProtectedRoute.jsx  # RBAC route guard
-│       │   └── StatCard.jsx        # Dashboard metric cards
-│       ├── context/
-│       │   └── AuthContext.jsx     # Authentication state & actions
-│       ├── pages/
-│       │   ├── LandingPage.jsx     # Landing page & registration form
-│       │   ├── CustomerLogin.jsx   # Customer login page
-│       │   ├── AdminLogin.jsx      # Super Admin login page
-│       │   ├── CustomerDashboard.jsx # Customer profile & self-service
-│       │   ├── AdminDashboard.jsx  # Super Admin control center
-│       │   └── NotFound.jsx        # 404 page
-│       ├── App.jsx                 # Routing configuration
-│       ├── index.css               # Global Tailwind styles
-│       └── main.jsx                # DOM entry point
-└── README.md
+│       ├── config/db.js      # MongoDB connection with memory-server fallback
+│       ├── controllers/
+│       │   ├── authController.js       # Register, login, me
+│       │   ├── customerController.js   # Customer profile, update, change password
+│       │   └── adminController.js      # Admin metrics, customer CRUD, status toggle
+│       ├── middleware/
+│       │   ├── auth.js                 # verifyToken, isAdmin, isCustomer guards
+│       │   ├── validator.js            # express-validator schemas
+│       │   └── errorHandler.js         # Centralized error handler
+│       ├── models/User.js              # Mongoose user schema with bcrypt hooks
+│       ├── routes/
+│       │   ├── authRoutes.js           # /api/auth
+│       │   ├── customerRoutes.js       # /api/customer
+│       │   └── adminRoutes.js          # /api/admin
+│       ├── utils/
+│       │   ├── seedAdmin.js            # Initial admin and customer seeder
+│       │   └── cleanData.js            # Database sanitization script
+│       └── server.js                   # Application entrypoint
+│
+└── client/                   # Frontend React Client
+    ├── index.html
+    ├── vite.config.js        # Configured with proxy to backend port 5000
+    ├── tailwind.config.js    # Styling design tokens
+    ├── package.json
+    └── src/
+        ├── api/axiosClient.js          # Axios client with JWT interceptor
+        ├── components/                 # Reusable UI components
+        │   ├── Alert.jsx
+        │   ├── Footer.jsx
+        │   ├── Modal.jsx
+        │   ├── Navbar.jsx
+        │   ├── Pagination.jsx
+        │   ├── ProtectedRoute.jsx
+        │   └── StatCard.jsx
+        ├── context/AuthContext.jsx     # Authentication context provider
+        ├── pages/
+        │   ├── LandingPage.jsx         # Landing page and registration form
+        │   ├── CustomerLogin.jsx       # Customer login view
+        │   ├── AdminLogin.jsx          # Super Admin login view
+        │   ├── CustomerDashboard.jsx   # Customer account portal
+        │   ├── AdminDashboard.jsx      # Admin management console
+        │   └── NotFound.jsx            # 404 view
+        ├── App.jsx                     # Application routes
+        ├── index.css
+        └── main.jsx
 ```
 
 ---
 
-## ⚡ Quick Start & Installation
+## Local Development Setup
 
 ### Prerequisites
-- **Node.js** (v18 or higher recommended)
-- **MongoDB** running locally (`mongodb://localhost:27017`) or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster URI.
+- Node.js (version 18.x or later)
+- MongoDB running locally on port 27017 (or a MongoDB Atlas connection string)
 
----
-
-### Step 1: Start the Backend Server
+### 1. Installation
+Clone the repository and install all dependencies:
 
 ```bash
-# Navigate to the server directory
-cd server
+git clone https://github.com/Simran1706/Customer-Management-.git
+cd Customer-Management-
 
-# Install backend dependencies
+# Install root dependencies
 npm install
 
-# Start the server (runs on port 5000 by default)
-npm run dev
-# OR: npm start
+# Install server dependencies
+cd server && npm install
+
+# Install client dependencies
+cd ../client && npm install
+cd ..
 ```
 
-*Note: On first startup, the database will automatically seed the Super Admin account and demo customer accounts.*
-
----
-
-### Step 2: Start the Frontend Application
-
-Open a new terminal window:
+### 2. Run the Application
+From the root directory, run:
 
 ```bash
-# Navigate to the client directory
-cd client
-
-# Install frontend dependencies
-npm install
-
-# Start the Vite development server (runs on port 5173 by default)
 npm run dev
 ```
 
-Open your browser and navigate to: **`http://localhost:5173`**
+This starts both:
+- Backend API at `http://localhost:5000`
+- Frontend Client at `http://localhost:5173`
+
+The database will automatically initialize and seed the default Super Admin and demo customers on initial startup.
 
 ---
 
-## 🔑 Pre-Seeded Credentials
+## Environment Configuration
 
-### Super Admin Account
-| Field | Value |
-|---|---|
-| **URL** | `http://localhost:5173/admin/login` |
-| **Email** | `admin@crm.com` |
-| **Password** | `Admin@12345` |
-| **Privileges** | View all metrics, search, view, edit, activate/deactivate customers |
+Configuration values are stored in `server/.env`. A template is provided in `server/.env.example`:
 
-*(Tip: The Admin Login page includes a one-click "Auto Fill" button to test instantly.)*
-
-### Demo Customer Accounts (Pre-Seeded)
-| Name | Email | Password | Status |
-|---|---|---|---|
-| Sarah Connor | `sarah.connor@example.com` | `Password@123` | Active |
-| David Miller | `david.miller@techflow.io` | `Password@123` | Active |
-| Elena Rostova | `elena.rostova@cloudscale.net` | `Password@123` | Inactive *(test deactivated login block)* |
-
----
-
-## 📡 API Endpoints Reference
-
-### Public Authentication (`/api/auth`)
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | Register a new customer | No |
-| `POST` | `/api/auth/login` | Log in customer or admin | No |
-| `GET` | `/api/auth/me` | Fetch currently authenticated user | Bearer Token |
-
-### Customer Portal (`/api/customer`)
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/api/customer/profile` | Get logged-in customer's profile | Customer Role |
-| `PUT` | `/api/customer/profile` | Update allowed fields (name, phone, address) | Customer Role |
-| `PUT` | `/api/customer/change-password` | Verify current & set new password | Customer Role |
-
-### Super Admin Console (`/api/admin`)
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/api/admin/metrics` | Total, active, inactive, and 30-day customer counts | Admin Role |
-| `GET` | `/api/admin/customers` | Searchable, paginated customer list (`?search=&status=&page=&limit=`) | Admin Role |
-| `GET` | `/api/admin/customers/:id` | Get customer record details by ID | Admin Role |
-| `PUT` | `/api/admin/customers/:id` | Update customer record details | Admin Role |
-| `PATCH`| `/api/admin/customers/:id/status` | Toggle or set customer active/inactive status | Admin Role |
+```env
+PORT=5000
+NODE_ENV=development
+MONGODB_URI=mongodb://localhost:27017/customer_management
+JWT_SECRET=super_secure_jwt_secret_key_crm_enterprise_2026_xyz
+JWT_EXPIRE=7d
+ADMIN_NAME=Super Admin
+ADMIN_EMAIL=admin@crm.com
+ADMIN_PASSWORD=Admin@12345
+ADMIN_PHONE=9876543210
+ADMIN_ADDRESS=Enterprise HQ, 100 Tech Blvd, Silicon Valley, CA
+CLIENT_URL=http://localhost:5173
+```
 
 ---
 
-## ✅ Acceptance Criteria Matrix
+## Default Demo Credentials
 
-| Criterion | Implementation | Status |
-|---|---|---|
-| **Customer can register** | Live interactive form on landing page with instant feedback | ✅ Completed |
-| **Form validation works** | Client-side validation + `express-validator` schema backend validation | ✅ Completed |
-| **Data saved in database** | MongoDB Mongoose model with timestamps and unique email index | ✅ Completed |
-| **Password hashed** | Bcrypt with 10 salt rounds in pre-save hook; never returned in responses | ✅ Completed |
-| **Customer can login** | Separate `/login` page with JWT issuance | ✅ Completed |
-| **Customer only sees own data** | Secured by `req.user.id` on backend; no ID passed in query/param | ✅ Completed |
-| **Admin can login** | Separate `/admin/login` page with role verification | ✅ Completed |
-| **Admin can manage customers** | Admin dashboard with view details modal, edit modal, status toggle | ✅ Completed |
-| **Search & pagination work** | Live search by name/email/phone with pagination controls & page size selector | ✅ Completed |
-| **Auth & Security** | JWT bearer tokens, RBAC middleware, active check, rate limit, helmet | ✅ Completed |
-| **Responsive UI** | Tailwind CSS with mobile, tablet, and desktop layouts | ✅ Completed |
+### Super Admin
+- **URL**: `http://localhost:5173/admin/login`
+- **Email**: `admin@crm.com`
+- **Password**: `Admin@12345`
+*(A one-click Auto Fill button is provided on the admin login page for testing).*
+
+### Sample Customers
+| Name | Email | Password | Status | Phone |
+|---|---|---|---|---|
+| Priya Sharma | `priya.sharma@zenithlabs.in` | `Password@123` | Active | `9876543210` |
+| David Miller | `david.miller@techflow.io` | `Password@123` | Active | `9432109876` |
+| Elena Rostova | `elena.rostova@cloudscale.net` | `Password@123` | Inactive | `9543210987` |
+
+*Note: Elena Rostova has an Inactive status, which can be used to test the deactivation login block.*
 
 ---
 
-## 🛡️ Security Best Practices Applied
-1. **Password Hashing**: Bcrypt with auto-salt generation.
-2. **Prevent Duplicate Registrations**: Unique index at MongoDB level plus explicit existence check with 409 Conflict.
-3. **Information Disclosure Prevention**: Passwords are set with `select: false` and stripped via `toJSON` transform.
-4. **Strict RBAC**: Routes verify user role directly from database record attached by JWT middleware.
-5. **Session Invalidation on Deactivation**: Deactivated users cannot log in and are denied on every subsequent API request (`403 Forbidden`).
-6. **Cross-Origin Resource Sharing (CORS)**: Configured with explicit origins and headers.
-7. **Rate Limiting**: Protects authentication endpoints from credential-stuffing attacks.
+## REST API Reference
+
+### Authentication Endpoints (`/api/auth`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| POST | `/api/auth/register` | Register a new customer | Public |
+| POST | `/api/auth/login` | Login user (customer or admin) | Public |
+| GET | `/api/auth/me` | Get current authenticated user profile | Private (Bearer token) |
+
+### Customer Portal Endpoints (`/api/customer`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| GET | `/api/customer/profile` | Get logged-in customer's profile | Customer Role |
+| PUT | `/api/customer/profile` | Update allowed fields (Name, Phone, Address) | Customer Role |
+| PUT | `/api/customer/change-password` | Change password with current password check | Customer Role |
+
+### Super Admin Endpoints (`/api/admin`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| GET | `/api/admin/metrics` | Customer metrics summary counts | Admin Role |
+| GET | `/api/admin/customers` | Searchable, paginated customer list (`?search=&status=&page=&limit=`) | Admin Role |
+| GET | `/api/admin/customers/:id` | Get customer details by ID | Admin Role |
+| PUT | `/api/admin/customers/:id` | Update customer record | Admin Role |
+| PATCH | `/api/admin/customers/:id/status` | Toggle customer active/inactive status | Admin Role |
+
+---
+
+## Database Schema
+
+```javascript
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 2,
+      maxlength: 60,
+      match: /^[a-zA-Z\s.]+$/
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+      match: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+    },
+    phone: {
+      type: String,
+      required: true,
+      trim: true,
+      match: /^(\+91[\-\s]?)?[6-9]\d{9}$|^[0-9]{10}$/
+    },
+    address: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 8,
+      maxlength: 300
+    },
+    password: {
+      type: String,
+      required: true,
+      minlength: 6,
+      select: false
+    },
+    role: {
+      type: String,
+      enum: ['customer', 'admin'],
+      default: 'customer'
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active'
+    }
+  },
+  {
+    timestamps: true // createdAt and updatedAt
+  }
+);
+```
+
+---
+
+## Security & Validation Standards
+
+1. **Password Hashing**: Passwords are never saved in plain text. A pre-save Mongoose hook hashes them with bcrypt using 10 salt rounds. Passwords are set with `select: false` and stripped from JSON serializations.
+2. **Duplicate Email Prevention**: Unique indexing at the database level coupled with pre-query checks returns explicit HTTP 409 Conflict responses.
+3. **Role-Based Access Control**: Middleware verifies JWT signatures and matches role requirements (`isAdmin`, `isCustomer`). Customers attempting to reach administrative endpoints receive an HTTP 403 Forbidden response.
+4. **Data Isolation**: Customer endpoints do not take arbitrary user IDs in URL parameters or request bodies. The user context is resolved exclusively from `req.user.id`.
+5. **Account Deactivation**: When an admin marks an account as inactive, that account's JWT session is rejected on subsequent API requests, and new logins are blocked.
+6. **Input Validation**: Both client-side and server-side validation layers ensure consistent data types, strict 10-digit phone number formatting, and valid email structures before reaching persistence.
